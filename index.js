@@ -86,8 +86,10 @@ async function connector(Num, res) {
     res.send({ code: code?.match(/.{1,4}/g)?.join("-") });
   }
 
-  session.ev.on("creds.update", saveCreds);
-
+  //session.ev.on("creds.update", saveCreds);
+  session.ev.on("creds.update", async () => {
+    await saveCreds();
+  });
   session.ev.on("connection.update", async (update) => {
     var { connection, lastDisconnect } = update;
 
@@ -146,27 +148,25 @@ async function connector(Num, res) {
       }
     } else if (connection === "close") {
       var reason = lastDisconnect?.error?.output?.statusCode;
-
-      if (
-        session &&
-        !session.authState.creds.registered &&
-        [
-          DisconnectReason.connectionLost,
-          DisconnectReason.restartRequired,
-        ].includes(reason)
-      ) {
-        console.log(`🔄 Reconnecting pairing session for ${Num}`);
-        await delay(2000);
-        connector(Num, res);
-      } else {
-        console.log(`❌ Pairing session closed: ${reason}`);
-        if (session) {
-          session.end();
-          session = null;
-        }
-      }
+      reconn(reason, Num, res);
     }
   });
+}
+
+function reconn(reason, Num, res) {
+  if (
+    [
+      DisconnectReason.connectionLost,
+      DisconnectReason.connectionClosed,
+      DisconnectReason.restartRequired,
+    ].includes(reason)
+  ) {
+    console.log("Connection lost, reconnecting...");
+    connector(Num, res); // pass the same number and response
+  } else {
+    console.log(`Disconnected! reason: ${reason}`);
+    if (session) session.end();
+  }
 }
 
 // ==================== SESSION RESTORATION ====================
@@ -600,7 +600,7 @@ app.use((req, res) => {
     error: "Route not found",
     available_routes: [
       "GET /",
-      "GET /pair?code=NUMBER",
+      "GET /pair?number=NUMBER",
       "GET /sessions",
       "GET /status?number=NUMBER",
       "GET /delete?number=NUMBER",
@@ -656,7 +656,7 @@ app.listen(PORT, async () => {
 📊 Active sessions: ${manager.connections.size}
 🔗 Endpoints:
    - GET  /                    (Health check)
-   - GET  /pair?code=NUMBER    (Get pairing code)
+   - GET  /pair?code=NUM    (Get pairing code)
    - GET  /sessions            (List active sessions)
    - GET  /status?number=NUM   (Check session status)
    - GET  /delete?number=NUM   (Delete session)
